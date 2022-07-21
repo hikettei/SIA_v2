@@ -173,15 +173,26 @@ class LSHConv(nn.Module):
     def forward(self,x):
         return self.lsh_module(x)
 
+class FFN(nn.Module):
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        super().__init__()
+        self.linear1 = nn.Linear(d_model, d_ff)
+        self.linear2 = nn.Linear(d_ff, d_model)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.linear2(F.elu(self.linear1(x)))
 
 class SIAEncoder(nn.Module):
-	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, encoder_layer_num=6, device=torch.device("cpu")):
+	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, d_ff=256, layer_norm_eps=1e-3, encoder_layer_num=6, n_heads=8, device=torch.device("cpu")):
 		super().__init__()
 		self.embedding = SentenceEmbedding(vocab_size, d_model, pad_idx, dropout, maxlen)
 		self.iattention = IndexAttentionSort(d_model)
 		self.device = device
-		self.attn = LSHAttention(d_model * 2)
-		
+
+		self.encoder_layers = nn.ModuleList([
+			LightEncoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+			for _ in range(encoder_layer_num)])
+
 	def forward(self, xs, ys, reference):
 		# reference = [u(1), u(2), ... , u(reference_max_line)] * n
 		# <=> [[1,2,3], [4,5,6] ...]
@@ -194,7 +205,9 @@ class SIAEncoder(nn.Module):
 
 		reference_embedding = self.iattention(xs, reference_embedding)
 		x = torch.concat([xs, reference_embedding], dim=1)
-		self.attn(x)
+
+		for encoder_layer in self.encoder_layers:
+			x = encoder_layer(x)
 		return x, ys
 
 
@@ -211,16 +224,31 @@ class SIAEncoder(nn.Module):
 			L = torch.cat([L, self.embedding(references[i+1]).unsqueeze(0)], dim=0)
 		return L
 
+class SIADecoder(nn.Module):
+	def __init__(self):
+		super().__init__()
+
 class LightEncoder(nn.Module):
-	def __init__(self, d_model, d_ff):
-		pass#self.attention = nn.MultiheadAttention(d_model * 2, num)
+	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
+		super().__init__()
+
+		self.attention = LSHAttention(d_model, n_heads=n_heads)
+		self.dropout_attention = nn.Dropout(dropout_rate)
+		self.layer_norm_attention = nn.LayerNorm(d_model, eps=layer_norm_eps)
+
+		self.ffn = FFN(d_model, d_ff)
+		self.dropout_ffn = nn.Dropout(dropout_rate)
+		self.layer_norm_ffn = nn.LayerNorm(d_model, eps=layer_norm_eps)
 
 	def forward(self, x):
-		_, state = self.lstm(embedding)
-		return state
+		x = self.layer_norm_attention(
+			self.dropout_attention(
+					self.attention(x)))
 
-	def forward(self, x):
-		pass
+		x = self.layer_norm_ffn(
+			self.dropout_ffn(self.ffn(x)))
+
+		return x
 
 class LightDecoder(nn.Module):
 	pass
