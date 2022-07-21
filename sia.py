@@ -188,6 +188,7 @@ class SIAEncoder(nn.Module):
 		self.embedding = SentenceEmbedding(vocab_size, d_model, pad_idx, dropout, maxlen)
 		self.iattention = IndexAttentionSort(d_model)
 		self.device = device
+		self.pad_idx = pad_idx
 
 		self.encoder_layers = nn.ModuleList([
 			LightEncoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
@@ -201,6 +202,7 @@ class SIAEncoder(nn.Module):
 		reference_embedding = self.make_embedding(reference)
 
 		xs = self.make_embedding(xs)
+		ys = torch.concat([ys, torch.tensor([self.pad_idx] * len(reference))], dim=1)
 		ys = self.make_embedding(ys)
 
 		reference_embedding = self.iattention(xs, reference_embedding)
@@ -225,8 +227,16 @@ class SIAEncoder(nn.Module):
 		return L
 
 class SIADecoder(nn.Module):
-	def __init__(self):
+	def __init__(self, d_model, dropout, d_ff=256, layer_norm_eps=1e-3, decoder_layer_num=6, n_heads=8):
 		super().__init__()
+
+		self.decoder_layers = nn.ModuleList([
+			LightDecoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+			for _ in range(decoder_layer_num)])
+	def forward(self, x, y):
+		for decoder_layer in self.decoder_layers:
+			y = decoder_layer(x, y)
+		return y
 
 class LightEncoder(nn.Module):
 	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
@@ -251,24 +261,61 @@ class LightEncoder(nn.Module):
 		return x
 
 class LightDecoder(nn.Module):
-	pass
+	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
+		super().__init__()
 
+		self.src_attention = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads)
+		self.tgt_attention = LSHAttention(d_model, n_heads=n_heads)
+		self.ffn           = FFN(d_model, d_ff)
+
+		self.dropout_src_attention = nn.Dropout(dropout_rate)
+		self.dropout_tgt_attention = nn.Dropout(dropout_rate)
+		self.dropout_ffn           = nn.Dropout(dropout_rate)
+
+		self.layer_norm_src_attention = nn.LayerNorm(d_model, eps=layer_norm_eps)
+		self.layer_norm_tgt_attention = nn.LayerNorm(d_model, eps=layer_norm_eps)
+		self.layer_norm_ffn           = nn.LayerNorm(d_model, eps=layer_norm_eps)
+
+	def forward(self, x, y):
+		y = self.layer_norm_src_attention(
+			y + self.dropout_src_attention(
+				self.src_attention(y, x, x)[0]))
+
+		x = self.layer_norm_tgt_attention(
+			y + self.dropout_tgt_attention(
+					self.tgt_attention(x)))
+
+		x = self.layer_norm_ffn(
+			x + self.dropout_ffn(
+				self.ffn(x)))
+
+		return x
 
 class SIA(nn.Module):
 	def __init__(self,
 		vocab_size,
 		d_model,
 		pad_idx,
-		dropout,
 		maxlen,
+		d_ff=128,
+		dropout=0.01,
+		layer_norm_eps=1e-3,
 		encoder_layer_num=3,
+		decoder_layer_num=3,
+		n_heads=1,
 		device=torch.device("cpu")):
 
 		super().__init__()
-		self.encoder = SIAEncoder(vocab_size, d_model, pad_idx, dropout, maxlen, device=device, encoder_layer_num=encoder_layer_num)
-		#self.decoder = SIADecoder()
+		self.encoder = SIAEncoder(vocab_size, d_model, pad_idx, dropout, maxlen,
+			d_ff=d_ff,
+			layer_norm_eps=layer_norm_eps,
+			device=device,
+			n_heads=n_heads,
+			encoder_layer_num=encoder_layer_num)
+
+		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads)
 
 	def forward(self, x, y, reference):
-		x_out = self.encoder(x, y, reference)
-		#x_out = self.decoder(x_out)
+		x_out, ys = self.encoder(x, y, reference)
+		x_out     = self.decoder(x_out, ys)
 		return x_out
