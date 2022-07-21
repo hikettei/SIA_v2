@@ -7,7 +7,7 @@ from tqdm import tqdm
 train_data = parser.parse(file_path="./dialogs/test_corpus.txt")
 train_data = parser.padding(train_data, parser.get_maxlen())
 
-model = sia.SIAEncoder(len(parser.get_dict().keys()), 256, 0, 0.1, parser.get_maxlen(), device=torch.device("cpu"))
+model = sia.SIA(len(parser.get_dict().keys()), 256, 0, 0.1, parser.get_maxlen(), device=torch.device("cpu"))
 
 
 # Parameters

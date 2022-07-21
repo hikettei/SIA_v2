@@ -44,7 +44,7 @@ class IndexAttentionSort(nn.Module):
 		return (weight_map * reference).view(xs.shape[0], -1, len(reference[0][0]))
 
 class SIAEncoder(nn.Module):
-	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, device=torch.device("cpu")):
+	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, encoder_layer_num=6, device=torch.device("cpu")):
 		super().__init__()
 		self.embedding = SentenceEmbedding(vocab_size, d_model, pad_idx, dropout, maxlen)
 		self.iattention = IndexAttentionSort(d_model)
@@ -93,12 +93,16 @@ class SIA(nn.Module):
 		vocab_size,
 		d_model,
 		pad_idx,
-		reference_max_line=128):
+		dropout,
+		maxlen,
+		encoder_layer_num=3,
+		device=torch.device("cpu")):
 
-		self.encoder = SIAEncoder(vocab_size, d_model, pad_idx, reference_max_line)
-		self.decoder = SIADecoder()
+		super().__init__()
+		self.encoder = SIAEncoder(vocab_size, d_model, pad_idx, dropout, maxlen, device=device, encoder_layer_num=encoder_layer_num)
+		#self.decoder = SIADecoder()
 
 	def forward(self, x, y, reference):
 		x_out = self.encoder(x, y, reference)
-		x_out = self.decoder(x_out)
+		#x_out = self.decoder(x_out)
 		return x_out
