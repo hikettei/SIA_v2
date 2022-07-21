@@ -77,12 +77,16 @@ class SIAEncoder(nn.Module):
 			L = torch.cat([L, self.embedding(references[i+1]).unsqueeze(0)], dim=0)
 		return L
 
+class SimpleEncoder(nn.Module):
+	def __init__(self):
+		pass
+
+	def forward(self, x):
+		pass
+
 class SIADecoder(nn.Module):
 	pass
 
-
-class MetaLSTM(nn.Module):
-	pass
 
 class SIA(nn.Module):
 	def __init__(self,
