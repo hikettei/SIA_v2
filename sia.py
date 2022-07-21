@@ -32,14 +32,14 @@ class SentenceEmbedding(nn.Module):
 		return self.pe(self.embedding(x))
 
 class IndexAttentionSort(nn.Module):
-	def __init__(self, bias=0.01):
+	def __init__(self, embedding_size, bias=0.3):
 		super().__init__()
 		self.model = nn.CosineSimilarity(dim=3, eps=1e-6)
 		self.relu  = nn.ReLU()
-		self.bias  = bias
+		self.bias  = bias / embedding_size
 
 	def forward(self, xs, reference):
-		weight_map = self.relu(self.model(xs.unsqueeze(1), reference)).mean(2).unsqueeze(1).mT.unsqueeze(3)
+		weight_map = self.relu(self.model(xs.unsqueeze(1), reference) - self.bias).mean(2).unsqueeze(1).mT.unsqueeze(3)
 		reference = reference.squeeze(1)
 		return (weight_map * reference).view(xs.shape[0], -1, len(reference[0][0]))
 
@@ -47,7 +47,7 @@ class SIAEncoder(nn.Module):
 	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, device=torch.device("cpu")):
 		super().__init__()
 		self.embedding = SentenceEmbedding(vocab_size, d_model, pad_idx, dropout, maxlen)
-		self.iattention = IndexAttentionSort()
+		self.iattention = IndexAttentionSort(d_model)
 		self.device = device
 
 	def forward(self, xs, ys, reference):
