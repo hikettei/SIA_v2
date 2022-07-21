@@ -44,6 +44,7 @@ def tokenize_word(sentence, tokenizer="janome"):
 		pass
 
 def read_form(line, contents):
+	global max_len
 	#
 	columns = line.split("[SEP]")
 
@@ -53,7 +54,9 @@ def read_form(line, contents):
 		while len(contents[1].split("[SEP]")) <= 1:
 			content_n = contents.pop(1)
 			content += content_n
-	return timestamp.split("_"), get_user_id(author), tokenize_word(content)
+	tokenized_word = tokenize_word(content)
+	max_len = max(max_len, len(tokenized_word) + 6)
+	return timestamp.split("_"), get_user_id(author), tokenized_word
 
 
 def collect_next_dialog(contents, interval_min):
@@ -95,7 +98,7 @@ def parse(file_path="./dialogs/corpus_1.txt", interval_min=1):
 		latest   = collect_next_dialog(contents, interval_min)
 		dialogs  = [latest]
 
-		total = len(contents)
+		total = len(contents) + 1
 		bar = tqdm(total = total)
 
 		while latest:
