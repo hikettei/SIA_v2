@@ -1,4 +1,5 @@
 from janome.tokenizer import Tokenizer
+from tqdm import tqdm
 
 janome_tokenizer = Tokenizer()
 
@@ -94,12 +95,17 @@ def parse(file_path="./dialogs/corpus_1.txt", interval_min=1):
 		latest   = collect_next_dialog(contents, interval_min)
 		dialogs  = [latest]
 
+		total = len(contents)
+		bar = tqdm(total = total)
+
 		while latest:
 			latest = collect_next_dialog(contents, interval_min)
 			if not latest:
 				break
 			if len(latest) > 0:
 				dialogs.append(latest)
+				bar.update(len(latest))
+			bar.update(1)
 
 		return [collect_data(x) for x in dialogs]
 
