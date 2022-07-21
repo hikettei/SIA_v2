@@ -41,7 +41,7 @@ class IndexAttentionSort(nn.Module):
 	def forward(self, xs, reference):
 		weight_map = self.relu(self.model(xs.unsqueeze(1), reference)).mean(2).unsqueeze(1).mT.unsqueeze(3)
 		reference = reference.squeeze(1)
-		return (weight_map * reference).view(1, -1, len(reference[0][0]))
+		return (weight_map * reference).view(xs.shape[0], -1, len(reference[0][0]))
 
 class SIAEncoder(nn.Module):
 	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, device=torch.device("cpu")):
@@ -62,6 +62,7 @@ class SIAEncoder(nn.Module):
 
 		reference_embedding = self.iattention(xs, reference_embedding)
 		x = torch.concat([xs, reference_embedding], dim=1)
+
 
 	def make_embedding(self, references):
 		#L = []
