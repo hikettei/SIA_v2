@@ -12,15 +12,17 @@ model = sia.SIAEncoder(len(parser.get_dict().keys()), 256, 0, 0.1, parser.get_ma
 
 # Parameters
 
-min_utterance = 5
-mini_batch    = 2
+min_utterance = 3
+mini_batch_f  = lambda x: x * round(x * 0.05) + 1
 
-assert mini_batch < min_utterance, ""
+#assert mini_batch < min_utterance, ""
 
 def train_epoch():
+	global c
 	for article in tqdm(train_data):
 		article_ = torch.tensor(article)
 		if len(article) >= min_utterance:
+			mini_batch = mini_batch_f(len(article))
 			for i in range(0, len(article), mini_batch):
 				if i + mini_batch + 1 <= len(article):
 					x = torch.tensor(article[i:i+mini_batch])
