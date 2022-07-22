@@ -9,7 +9,7 @@ user_names = {}
 max_len = 0
 
 def get_maxlen():
-	return max_len
+	return max(256, max_len)
 
 def get_dict():
 	return words_dict

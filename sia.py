@@ -1,8 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from reformer_pytorch import LSHAttention as Ref_LSHAttention
 import math
+
+# 隣接する単語だけでAtteentionを計算+Sort
+# weightを後で可視化してみる.
 
 class PositionalEncoding(nn.Module):
     def __init__(self, embedding_size: int, dropout: float, maxlen: int = 5000):
@@ -189,7 +192,7 @@ class SIAEncoder(nn.Module):
 		self.iattention = IndexAttentionSort(d_model)
 		self.device = device
 		self.pad_idx = pad_idx
-
+		self.train_source = True
 		self.encoder_layers = nn.ModuleList([
 			LightEncoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
 			for _ in range(encoder_layer_num)])
@@ -200,13 +203,21 @@ class SIAEncoder(nn.Module):
 		# xs ... [[1,2,3], [4,5,6] ...]
 		# ys ... [[1,2,3], [4,5,6] ...]
 		reference_embedding = self.make_embedding(reference)
+		#xs = torch.concat([xs, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)
+		#ys = torch.concat([ys, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)
 
 		xs = self.make_embedding(xs)
-		ys = torch.concat([ys, torch.tensor([self.pad_idx] * len(reference))], dim=1)
 		ys = self.make_embedding(ys)
 
 		reference_embedding = self.iattention(xs, reference_embedding)
+
 		x = torch.concat([xs, reference_embedding], dim=1)
+
+		if self.train_source:
+			ys = torch.concat([ys, reference_embedding], dim=1)
+		else:
+			pass
+			# ys = empty embeddings
 
 		for encoder_layer in self.encoder_layers:
 			x = encoder_layer(x)
@@ -264,7 +275,7 @@ class LightDecoder(nn.Module):
 	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
 		super().__init__()
 
-		self.src_attention = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads)
+		self.src_attention = Ref_LSHAttention(n_hashes=n_heads)#nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads)
 		self.tgt_attention = LSHAttention(d_model, n_heads=n_heads)
 		self.ffn           = FFN(d_model, d_ff)
 
@@ -279,7 +290,7 @@ class LightDecoder(nn.Module):
 	def forward(self, x, y):
 		y = self.layer_norm_src_attention(
 			y + self.dropout_src_attention(
-				self.src_attention(y, x, x)[0]))
+				self.src_attention(y, x)[0])) #q,k,v=y,x,x
 
 		x = self.layer_norm_tgt_attention(
 			y + self.dropout_tgt_attention(
