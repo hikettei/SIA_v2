@@ -33,7 +33,7 @@ class SentenceEmbedding(nn.Module):
 
 	def forward(self, x):
 		# x ... [[1,2,3], [4,5,6] ...]
-		return self.pe(self.embedding(x))
+		return self.embedding(x) #self.pe(self.embedding(x))
 
 
 class IndexAttentionSort(nn.Module):
@@ -186,15 +186,22 @@ class FFN(nn.Module):
         return self.linear2(F.elu(self.linear1(x)))
 
 class SIAEncoder(nn.Module):
-	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, d_ff=256, layer_norm_eps=1e-3, encoder_layer_num=6, n_heads=8, device=torch.device("cpu")):
+	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, hidden_size=256, d_ff=256, layer_norm_eps=1e-3, encoder_layer_num=6, name="light", n_heads=8, device=torch.device("cpu")):
 		super().__init__()
 		self.embedding = SentenceEmbedding(vocab_size, d_model, pad_idx, dropout, maxlen)
 		self.iattention = IndexAttentionSort(d_model)
 		self.device = device
 		self.pad_idx = pad_idx
 		self.train_source = True
+		self.name = name
+		self.hidden_size = hidden_size
+		def new_model(name):
+			if name == "light":
+				return LightEncoder(d_model * 2, hidden_size)
+			else:
+				return EncoderLayer(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
 		self.encoder_layers = nn.ModuleList([
-			LightEncoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+			new_model(name)
 			for _ in range(encoder_layer_num)])
 
 	def forward(self, xs, ys, reference):
@@ -203,25 +210,38 @@ class SIAEncoder(nn.Module):
 		# xs ... [[1,2,3], [4,5,6] ...]
 		# ys ... [[1,2,3], [4,5,6] ...]
 		reference_embedding = self.make_embedding(reference)
-		#xs = torch.concat([xs, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)
-		#ys = torch.concat([ys, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)
+		if self.name != "light":
+			xs = torch.concat([xs, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)	
+			ys = torch.concat([ys, torch.tensor([[self.pad_idx] * len(reference)])], dim=1)
 
-		xs = self.make_embedding(xs)
-		ys = self.make_embedding(ys)
-
-		reference_embedding = self.iattention(xs, reference_embedding)
-
-		x = torch.concat([xs, reference_embedding], dim=1)
-
-		if self.train_source:
-			ys = torch.concat([ys, reference_embedding], dim=1)
-		else:
+		def make_mask(tensor, l):
 			pass
+
+		#xs = torch.concat([xs, reference], dim=0)
+		#ys = torch.concat([ys, reference], dim=0)
+
+		x = self.make_embedding(xs)
+		y = self.make_embedding(ys)
+
+		reference_embedding = self.iattention(x, reference_embedding)
+
+		#x = torch.concat([xs, reference_embedding], dim=1)
+
+		#if self.train_source:
+		#	ys = torch.concat([ys, reference_embedding], dim=1)
+		#else:
+		#	pass
 			# ys = empty embeddings
 
-		for encoder_layer in self.encoder_layers:
-			x = encoder_layer(x)
-		return x, ys
+		hidden = torch.zeros(1, x.shape[0], self.hidden_size)
+
+		if self.name == "light":
+			for encoder_layer in self.encoder_layers:
+				x, hidden = encoder_layer(x, hidden)
+		else:
+			for encoder_layer in self.encoder_layers:
+				x = encoder_layer(x)
+		return x, y, hidden
 
 
 	def make_embedding(self, references):
@@ -238,18 +258,30 @@ class SIAEncoder(nn.Module):
 		return L
 
 class SIADecoder(nn.Module):
-	def __init__(self, d_model, dropout, d_ff=256, layer_norm_eps=1e-3, decoder_layer_num=6, n_heads=8):
+	def __init__(self, d_model, dropout, d_ff=256, layer_norm_eps=1e-3, hidden_size=256, decoder_layer_num=6, n_heads=8, name="light"):
 		super().__init__()
 
+		def new_model(name):
+			if name == "light":
+				return LightDecoder(d_model * 2, hidden_size)
+			else:
+				return DecoderLayer(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+
+		self.hidden_size = hidden_size
+		self.name = name
 		self.decoder_layers = nn.ModuleList([
-			LightDecoder(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+			new_model(name)
 			for _ in range(decoder_layer_num)])
-	def forward(self, x, y):
-		for decoder_layer in self.decoder_layers:
-			y = decoder_layer(x, y)
+	def forward(self, x, y, hidden):
+		if self.name == "light":
+			for decoder_layer in self.decoder_layers:
+				y, hidden = decoder_layer(y, hidden)
+		else:
+			for decoder_layer in self.decoder_layers:
+				y = decoder_layer(x, y)
 		return y
 
-class LightEncoder(nn.Module):
+class EncoderLayer(nn.Module):
 	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
 		super().__init__()
 
@@ -271,7 +303,7 @@ class LightEncoder(nn.Module):
 
 		return x
 
-class LightDecoder(nn.Module):
+class DecoderLayer(nn.Module):
 	def __init__(self, d_model, d_ff, dropout_rate, layer_norm_eps, n_heads=8):
 		super().__init__()
 
@@ -290,7 +322,7 @@ class LightDecoder(nn.Module):
 	def forward(self, x, y):
 		y = self.layer_norm_src_attention(
 			y + self.dropout_src_attention(
-				self.src_attention(y, x)[0])) #q,k,v=y,x,x
+				self.src_attention(y, x)[0])) #q, k, v=y,x,x | qk, v = x, y
 
 		x = self.layer_norm_tgt_attention(
 			y + self.dropout_tgt_attention(
@@ -301,6 +333,32 @@ class LightDecoder(nn.Module):
 				self.ffn(x)))
 
 		return x
+
+class LightEncoder(nn.Module):
+	def __init__(self, d_model, hidden_size, n_heads=1):
+		super().__init__()
+		self.hidden_size = hidden_size
+		self.model       = nn.GRU(d_model, hidden_size, batch_first=True)
+		self.linear      = nn.Linear(hidden_size, d_model)
+		self.attention   = LSHAttention(d_model, n_heads=n_heads)
+
+	def forward(self, i, hidden):
+		i, hidden = self.model(i, hidden)
+		hidden = self.attention(hidden)
+		return i, self.linear(hidden)
+
+class LightDecoder(nn.Module):
+	def __init__(self, d_model, hidden_size, n_heads=1):
+		super().__init__()
+		self.hidden_size = hidden_size
+		self.model       = nn.GRU(d_model, hidden_size, batch_first=True)
+		self.linear      = nn.Linear(hidden_size, d_model)
+		self.attention   =  LSHAttention(d_model, n_heads=n_heads)
+
+	def forward(self, i, hidden):
+		i, hidden = self.model(i, hidden)
+		hidden = self.attention(hidden)
+		return i, self.linear(hidden)
 
 class SIA(nn.Module):
 	def __init__(self,
@@ -314,6 +372,7 @@ class SIA(nn.Module):
 		encoder_layer_num=3,
 		decoder_layer_num=3,
 		n_heads=1,
+		name="light",
 		device=torch.device("cpu")):
 
 		super().__init__()
@@ -322,11 +381,14 @@ class SIA(nn.Module):
 			layer_norm_eps=layer_norm_eps,
 			device=device,
 			n_heads=n_heads,
-			encoder_layer_num=encoder_layer_num)
+			hidden_size=d_model*2,
+			encoder_layer_num=encoder_layer_num,
+			name=name)
 
-		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads)
-
+		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, hidden_size=d_model*2, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads, name=name)
+		self.linear  = nn.Linear(d_model * 2, vocab_size)
 	def forward(self, x, y, reference):
-		x_out, ys = self.encoder(x, y, reference)
-		x_out     = self.decoder(x_out, ys)
-		return x_out
+		x_out, ys, hidden = self.encoder(x, y, reference)
+		x_out             = self.decoder(x_out, ys, hidden)
+		x_out             = x_out[:, :len(y[0]), :]
+		return self.linear(x_out)
