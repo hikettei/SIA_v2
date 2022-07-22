@@ -1,10 +1,11 @@
 from janome.tokenizer import Tokenizer
 from tqdm import tqdm
+import numpy as np
 
 janome_tokenizer = Tokenizer()
 
 words_dict = {"<PAD>":0, "<SEP>":1}
-
+user_names = []
 max_len = 0
 
 def get_maxlen():
@@ -12,6 +13,9 @@ def get_maxlen():
 
 def get_dict():
 	return words_dict
+
+def get_users():
+	return user_names
 
 def translate_into_ids(words):
 	global max_len
@@ -26,6 +30,10 @@ def translate_into_ids(words):
 	return l
 
 def get_user_id(user_name):
+	global user_names
+	user_names.append(user_name)
+	user_names = list(np.unique(user_names))
+
 	if user_name in words_dict:
 		return words_dict[user_name]
 	else:
@@ -87,13 +95,16 @@ def collect_next_dialog(contents, interval_min):
 		else:
 			return [last_utterance]
 
-def parse(file_path="./dialogs/corpus_1.txt", interval_min=1):
+def parse(file_path="./dialogs/corpus_1.txt", interval_min=1, N=0):
 
 	def collect_data(x):
 		return [[i[1]] + [words_dict["<SEP>"]] + i[2] + [words_dict["<SEP>"]] for i in x]
 
 	with open(file_path, "r") as f:
 		contents = f.read().split("\n")
+		if N > 0:
+			contents = contents[-N:]
+
 		latest   = collect_next_dialog(contents, interval_min)
 		dialogs  = [latest]
 
