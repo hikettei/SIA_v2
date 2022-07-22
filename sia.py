@@ -37,11 +37,11 @@ class SentenceEmbedding(nn.Module):
 
 
 class IndexAttentionSort(nn.Module):
-	def __init__(self, embedding_size, bias=0.3):
+	def __init__(self, embedding_size, bias=0.1):
 		super().__init__()
 		self.model = nn.CosineSimilarity(dim=3, eps=1e-6)
 		self.relu  = nn.ReLU()
-		self.bias  = nn.Parameter(torch.tensor(bias / embedding_size))
+		self.bias  = nn.Parameter(torch.tensor(bias))#nn.Parameter(torch.tensor(bias / embedding_size))
 
 	def forward(self, xs, reference):
 		weight_map = self.relu(self.model(xs.unsqueeze(1), reference) - self.bias).mean(2).unsqueeze(1).mT.unsqueeze(3)
@@ -183,7 +183,7 @@ class FFN(nn.Module):
         self.linear2 = nn.Linear(d_ff, d_model)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear2(F.elu(self.linear1(x)))
+        return self.linear2(F.relu(self.linear1(x)))
 
 class SIAEncoder(nn.Module):
 	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen, hidden_size=256, d_ff=256, layer_norm_eps=1e-3, encoder_layer_num=6, name="light", n_heads=8, device=torch.device("cpu")):
@@ -221,7 +221,7 @@ class SIAEncoder(nn.Module):
 		
 		# context informations
 		
-		x = torch.concat([x, reference_embedding], dim=1)
+		x = torch.concat([reference_embedding, x], dim=1)
 		#y = torch.concat([y, reference_embedding], dim=1)
 
 		hidden = torch.zeros(1, x.shape[0], self.hidden_size)
@@ -368,7 +368,7 @@ class SIA(nn.Module):
 		d_model,
 		pad_idx,
 		maxlen,
-		d_ff=512,
+		d_ff=256,
 		dropout=0.1,
 		layer_norm_eps=1e-3,
 		encoder_layer_num=3,

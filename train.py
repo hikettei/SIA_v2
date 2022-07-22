@@ -10,7 +10,7 @@ import torch.nn as nn
 train_data = parser.parse(file_path="./dialogs/test_code.txt")
 train_data = parser.padding(train_data, parser.get_maxlen())
 
-model = sia.SIA(len(parser.get_dict().keys()), 100, 0, parser.get_maxlen(), device=torch.device("cpu"))
+model = sia.SIA(len(parser.get_dict().keys()), 512, 0, parser.get_maxlen(), device=torch.device("cpu"))
 
 optimizer = optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.CrossEntropyLoss(ignore_index=parser.get_dict()["<PAD>"])
@@ -22,6 +22,26 @@ mini_batch_f  = lambda x: x * round(x * 0.05) + 1
 
 id2word = dict(zip(parser.get_dict().values(), parser.get_dict().keys()))
 #assert mini_batch < min_utterance, ""
+
+def search_sep(seq, label):
+	i = 0
+	F = False
+	for m in range(len(seq)):
+		if m == parser.get_dict()["<SEP>"]:
+			if F:
+				F = True
+			else:
+				break
+		else:
+			i += 1
+
+	r = seq[:, :i]
+
+	l = len(label) - len(r)
+
+	p = torch.tensor([[0] * l])
+	print(r, p)
+	return torch.cat([r, p], dim=1)
 
 def train_epoch():
 	global c
@@ -41,7 +61,8 @@ def train_epoch():
 					out = model(x, y, article_)
 
 					for i in range(y.size()[0]):
-						loss += criterion(out[i], y[i])
+						o = search_sep(out[i], y[i])
+						loss += criterion(o, y[i]) # 二つの目の<SEP>以降は無視したい。。。 <- ここのLossをなんとかしたらSEP問題は解決しそう
 					loss.backward()
 					optimizer.step()
 
