@@ -22,7 +22,8 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('embedding_pos', embedding_pos)
 
     def forward(self, token_embedding):
-        return self.dropout(torch.concat([token_embedding, self.embedding_pos[: token_embedding.size(0), :].squeeze(1)], dim=1))
+    	return self.dropout(token_embedding)
+        #return self.dropout(torch.concat([token_embedding, self.embedding_pos[: token_embedding.size(0), :].squeeze(1)], dim=1))
 
 
 class SentenceEmbedding(nn.Module):
@@ -197,9 +198,9 @@ class SIAEncoder(nn.Module):
 		self.hidden_size = hidden_size
 		def new_model(name):
 			if name == "light":
-				return LightEncoder(d_model * 2, hidden_size, d_ff=d_ff, dropout=dropout, layer_norm_eps=layer_norm_eps)
+				return LightEncoder(d_model, hidden_size, d_ff=d_ff, dropout=dropout, layer_norm_eps=layer_norm_eps)
 			else:
-				return EncoderLayer(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+				return EncoderLayer(d_model, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
 		self.encoder_layers = nn.ModuleList([
 			new_model(name)
 			for _ in range(encoder_layer_num)])
@@ -254,9 +255,9 @@ class SIADecoder(nn.Module):
 
 		def new_model(name):
 			if name == "light":
-				return LightDecoder(d_model * 2, hidden_size, d_ff=d_ff, dropout=dropout, layer_norm_eps=layer_norm_eps)
+				return LightDecoder(d_model, hidden_size, d_ff=d_ff, dropout=dropout, layer_norm_eps=layer_norm_eps)
 			else:
-				return DecoderLayer(d_model * 2, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
+				return DecoderLayer(d_model, d_ff, dropout, layer_norm_eps, n_heads=n_heads)
 
 		self.hidden_size = hidden_size
 		self.name = name
@@ -383,12 +384,12 @@ class SIA(nn.Module):
 			layer_norm_eps=layer_norm_eps,
 			device=device,
 			n_heads=n_heads,
-			hidden_size=d_model*2,
+			hidden_size=d_model,
 			encoder_layer_num=encoder_layer_num,
 			name=name)
 
-		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, hidden_size=d_model*2, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads, name=name)
-		self.linear  = nn.Linear(d_model * 2, vocab_size)
+		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, hidden_size=d_model, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads, name=name)
+		self.linear  = nn.Linear(d_model, vocab_size)
 	def forward(self, x, y, reference):
 		x_out, ys, hidden = self.encoder(x, y, reference)
 		x_out             = self.decoder(x_out, ys, hidden)
