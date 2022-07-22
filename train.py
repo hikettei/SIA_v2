@@ -7,7 +7,7 @@ from tqdm import tqdm
 import torch.optim as optim
 import torch.nn as nn
 
-train_data = parser.parse(file_path="./dialogs/test_code.txt")
+train_data = parser.parse(file_path="./dialogs/test_corpus.txt")
 train_data = parser.padding(train_data, parser.get_maxlen())
 
 model = sia.SIA(len(parser.get_dict().keys()), 512, 0, parser.get_maxlen(), device=torch.device("cpu"))
@@ -26,8 +26,9 @@ id2word = dict(zip(parser.get_dict().values(), parser.get_dict().keys()))
 def search_sep(seq, label):
 	i = 0
 	F = False
+	_, word_ids = torch.max(seq, dim=0)
 	for m in range(len(seq)):
-		if m == parser.get_dict()["<SEP>"]:
+		if word_ids[m].item() == parser.get_dict()["<SEP>"]:
 			if F:
 				F = True
 			else:
@@ -35,13 +36,11 @@ def search_sep(seq, label):
 		else:
 			i += 1
 
-	r = seq[:, :i]
-
+	r = seq[:i, :]
 	l = len(label) - len(r)
 
 	p = torch.tensor([[0] * l])
-	print(r, p)
-	return torch.cat([r, p], dim=1)
+	return torch.cat([r, p], dim=0)
 
 def train_epoch():
 	global c
@@ -61,8 +60,7 @@ def train_epoch():
 					out = model(x, y, article_)
 
 					for i in range(y.size()[0]):
-						o = search_sep(out[i], y[i])
-						loss += criterion(o, y[i]) # 二つの目の<SEP>以降は無視したい。。。 <- ここのLossをなんとかしたらSEP問題は解決しそう
+						loss += criterion(out[i], y[i]) # 二つの目の<SEP>以降は無視したい。。。 <- ここのLossをなんとかしたらSEP問題は解決しそう
 					loss.backward()
 					optimizer.step()
 
