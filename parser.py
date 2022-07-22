@@ -4,7 +4,6 @@ from tqdm import tqdm
 janome_tokenizer = Tokenizer()
 
 words_dict = {"<PAD>":0, "<SEP>":1}
-user_names = {}
 
 max_len = 0
 
@@ -27,11 +26,11 @@ def translate_into_ids(words):
 	return l
 
 def get_user_id(user_name):
-	if user_name in user_names:
-		return user_names[user_name]
+	if user_name in words_dict:
+		return words_dict[user_name]
 	else:
-		user_names[user_name] = len(user_names)
-		return user_names[user_name]
+		words_dict[user_name] = len(words_dict)
+		return words_dict[user_name]
 
 def tokenize_word(sentence, tokenizer="janome"):
 	#NAME_ID[SEP]CONTENT[SEP]NAME_ID...
