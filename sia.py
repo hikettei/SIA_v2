@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from reformer_pytorch import LSHAttention as Ref_LSHAttention
+from reformer_pytorch import LSHAttention
 import math
 
 # 隣接する単語だけでAtteentionを計算+Sort
@@ -42,7 +42,7 @@ class IndexAttentionSort(nn.Module):
 		super().__init__()
 		self.model = nn.CosineSimilarity(dim=3, eps=1e-6)
 		self.relu  = nn.ReLU()
-		self.bias  = nn.Parameter(torch.tensor(bias))#nn.Parameter(torch.tensor(bias / embedding_size))
+		self.bias  = bias#nn.Parameter(torch.tensor(bias))
 
 	def forward(self, xs, reference):
 		weight_map = self.relu(self.model(xs.unsqueeze(1), reference) - self.bias).mean(2).unsqueeze(1).mT.unsqueeze(3)
@@ -140,11 +140,11 @@ class LightEncoder(nn.Module):
 		return i, self.ffn(hidden)
 
 class LightDecoder(nn.Module):
-	def __init__(self, d_model, hidden_size, d_ff=512, dropout=0.01, layer_norm_eps=1e-3):
+	def __init__(self, d_model, hidden_size, d_ff=512, dropout=0.1, layer_norm_eps=1e-3):
 		super().__init__()
 		self.hidden_size = hidden_size
 		self.model       = nn.GRU(d_model, hidden_size, batch_first=True)
-		self.attention   =  Ref_LSHAttention(n_hashes=8)
+		self.attention   = LSHAttention(bucket_size=64, n_hashes=8)
 		
 		self.model_dropout = nn.Dropout(dropout)
 		self.layer_norm_model = nn.LayerNorm(d_model, eps=layer_norm_eps)
