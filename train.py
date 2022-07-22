@@ -17,33 +17,39 @@ criterion = nn.CrossEntropyLoss(ignore_index=parser.get_dict()["<PAD>"])
 
 # Parameters
 
-min_utterance = 6
-mini_batch_f  = lambda x: x * round(x * 0.05) + 1
+min_utterance = 5
+mini_batch_f  = lambda x: 2#x * round(x * 0.1) + 1 #x * round(x * 0.05) + 1
 
 id2word = dict(zip(parser.get_dict().values(), parser.get_dict().keys()))
 #assert mini_batch < min_utterance, ""
 
-def search_sep(seq, label):
+def search_sep(seq):
 	i = 0
-	F = False
-	_, word_ids = torch.max(seq, dim=0)
+	F = True
 	for m in range(len(seq)):
-		if word_ids[m].item() == parser.get_dict()["<SEP>"]:
+		if seq[m].item() == parser.get_dict()["<SEP>"]:
 			if F:
-				F = True
+				F = False
 			else:
 				break
 		else:
 			i += 1
+	return seq[:i]
 
-	r = seq[:i, :]
-	l = len(label) - len(r)
-
-	p = torch.tensor([[0] * l])
-	return torch.cat([r, p], dim=0)
+def sep_index(seq):
+	i = 0
+	F = True
+	for m in range(len(seq)):
+		if seq[m].item() == parser.get_dict()["<SEP>"]:
+			if F:
+				F = False
+			else:
+				break
+		else:
+			i += 1
+	return i
 
 def train_epoch():
-	global c
 	model.train()
 	for article in tqdm(train_data):
 		article_ = torch.tensor(article)
@@ -59,26 +65,34 @@ def train_epoch():
 
 					out = model(x, y, article_)
 
+					_, output_ids = torch.max(out, dim=-1)
+
+
 					for i in range(y.size()[0]):
-						loss += criterion(out[i], y[i]) # 二つの目の<SEP>以降は無視したい。。。 <- ここのLossをなんとかしたらSEP問題は解決しそう
+						m = max(sep_index(y[i]), sep_index(output_ids[i])) + 2
+						loss += criterion(out[i][:m], y[i][:m])
 					loss.backward()
 					optimizer.step()
 
-					_, output_ids = torch.max(out, dim=-1)
-					print("==========")
+					print("============================")
 					print("")
-					print("==========")
+					print("============================")
 
 					for b in range(mini_batch):
-						sentence = [id2word[i.item()] for i in x[b]]
+						m = max(sep_index(y[b]), sep_index(output_ids[b])) + 2
+						sentence = [id2word[i.item()] for i in x[b][:m]]
 						print("INPUT :", "".join([s for s in sentence if s != "<PAD>"]))
-						print("=====")
-						sentence = [id2word[i.item()] for i in y[b]]
+						print("")
+						sentence = [id2word[i.item()] for i in y[b][:m]]
 						print("EXCEPT:", "".join([s for s in sentence if s != "<PAD>"]))
-						print("=====")
-						sentence = [id2word[i.item()] for i in output_ids[b]]
+						print("")
+						sentence = [id2word[i.item()] for i in output_ids[b][:m]]
 						print("ANS:", "".join([s for s in sentence if s != "<PAD>"]))
 						print("")
 					print(loss)
+
+train_epoch()
+
+train_epoch()
 
 train_epoch()
