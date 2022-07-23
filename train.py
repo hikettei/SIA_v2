@@ -10,10 +10,23 @@ import torch.nn as nn
 import random
 import pickle
 
+class LabelSmoothingCrossEntropy(nn.Module):
+    def __init__(self, epsilon=0.1, reduction='mean'):
+        super().__init__()
+        self.epsilon = epsilon
+        self.reduction = reduction
+
+    def forward(self, preds, target):
+        n = preds.size()[-1]
+        log_preds = F.log_softmax(preds, dim=-1)
+        loss = reduce_loss(-log_preds.sum(dim=-1), self.reduction)
+        nll = F.nll_loss(log_preds, target, reduction=self.reduction)
+        return linear_combination(nll, loss/n, self.epsilon)
+
 device_name = "cpu"
 device = torch.device(device_name)
 
-dataset = parser.parse(file_path="./dialogs/corpus_1.txt", N=10000)
+dataset = parser.parse(file_path="./dialogs/test_corpus.txt", N=10000)
 dataset = parser.padding(dataset, parser.get_maxlen())
 
 min_utterance = 5
@@ -30,11 +43,12 @@ with open("./models/model_cpu_3_.pickle", "wb") as f:
 	pickle.dump(parser.get_dict(), f)
 
 model = sia.SIA(len(parser.get_dict().keys()),
-	256,
+	512,
 	0,
 	parser.get_maxlen(),
-	encoder_layer_num=3,
-	decoder_layer_num=3,
+	dropout=0.1,
+	encoder_layer_num=1,
+	decoder_layer_num=1,
 	device=device)
 
 restart_from = False
@@ -44,13 +58,13 @@ if restart_from:
 
 model.to(device_name)
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
 criterion = nn.CrossEntropyLoss(ignore_index=parser.get_dict()["<PAD>"])
 
 # Parameters
 
 SAVE_MODEL_EVERY = 50
-VALID_EVERY      = 500
+VALID_EVERY      = 50
 
 mini_batch_f  = lambda x: x // 3 + 1#x * round(x * 0.05) + 1
 
@@ -83,16 +97,22 @@ def sep_index(seq):
 			i += 1
 	return i
 
+SOS_Tokens = []
+
+for article in train_data[0:10]:
+	for u in article:
+		SOS_Tokens.append(u[0])
+
 def train_epoch():
 	random.shuffle(train_data)
 	bar = tqdm(total=len(train_data))
 	for data_nth, article in enumerate(train_data):
 		bar.update(1)
 
-		if (data_nth + 0) % SAVE_MODEL_EVERY == 0:
+		if (data_nth + 1) % SAVE_MODEL_EVERY == 0:
 			torch.save(model.state_dict(), model_name)
 
-		if (data_nth + 0) % VALID_EVERY == 0:
+		if (data_nth + 1) % VALID_EVERY == 0:
 			valid_model()
 
 		model.train()
@@ -105,23 +125,30 @@ def train_epoch():
 
 			for i in range(0, len(article), mini_batch):
 				if i + mini_batch + 1 <= len(article):
+					random.shuffle(SOS_Tokens)
 
 					loss = 0.
 					optimizer.zero_grad()
 
 					x = torch.tensor(article[i:i+mini_batch], device=device)
 					y = torch.tensor(article[i+1:i+mini_batch+1], device=device)
+					
+					y_ = torch.tensor([[SOS_Tokens[0]] + [0] * 63] * mini_batch, device=device)
 
-					out = model(x, y, article_)
+					article_masked = torch.tensor(article[:i+mini_batch], device=device)
+					out = model(x, y_, article_masked)
 
 					_, output_ids = torch.max(out, dim=-1)
 
 					for i in range(y.size()[0]):
-						m = max(sep_index(y[i]), sep_index(output_ids[i])) + 2
-						loss += criterion(out[i][:m], y[i][:m])
+						m = max(sep_index(y[i]), sep_index(output_ids[i])) + 1
+						loss += criterion(out[i][:m-1], y[i][:m-1])
 
 					loss.backward()
 					optimizer.step()
+
+					#for output_id in output_ids:
+					#	print("".join([id2word[i.item()] for i in output_id]))
 
 					total_loss += loss.item()
 
@@ -151,11 +178,12 @@ def valid_model():
 			for i in range(0, len(article)):
 				if i + 1 < len(article):
 					x = torch.tensor(article[i:i+1], device=device)
-					y = torch.tensor([[article[i+1:i+2][0][0]] + [0] * 63], device=device)
-					
+					y = torch.tensor(article[i+1:i+2], device=device)
+					y_ = torch.tensor([[article[i+1:i+2][0][0]] + [0] * 63], device=device)
+
 					article_masked = torch.tensor(article[:i+1], device=device)
 
-					out = model.predict(x, y, article_masked)
+					out = model(x, y_, article_masked)
 					_, output_ids = torch.max(out, dim=-1)
 
 					m = max(sep_index(y[0]), sep_index(output_ids[0])) + 2

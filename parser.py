@@ -131,9 +131,15 @@ def padding(parsed_data, maxlen):
 
 	for dialogs in parsed_data:
 		tmp = []
-		for utterance in dialogs:
+		for i, utterance in enumerate(dialogs):
 			if len(utterance) >= ABSOLUTE_MAX_LEN-5:
 				utterance = utterance[:ABSOLUTE_MAX_LEN-5]
-			tmp.append(utterance + [words_dict["<PAD>"]] * (ABSOLUTE_MAX_LEN - len(utterance)))
+			if i < len(dialogs) - 1:
+				if len(utterance) + len(dialogs[i+1]) < ABSOLUTE_MAX_LEN:
+					tmp.append(utterance + dialogs[i+1] +  [words_dict["<PAD>"]] * (ABSOLUTE_MAX_LEN - len(utterance) - len(dialogs[i+1])))
+				else:
+					tmp.append(utterance + [words_dict["<PAD>"]] * (ABSOLUTE_MAX_LEN - len(utterance)))
+			else:
+				tmp.append(utterance + [words_dict["<PAD>"]] * (ABSOLUTE_MAX_LEN - len(utterance)))
 		train_data.append(tmp)
 	return train_data

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from reformer_pytorch import LSHSelfAttention
 import math
 
 
@@ -16,16 +18,16 @@ class SentenceEmbedding(nn.Module):
 
 
 class IndexAttentionSort(nn.Module):
-	def __init__(self, embedding_size, bias=0.1):
+	def __init__(self, embedding_size, bias=1.5):
 		super().__init__()
 		self.model = nn.CosineSimilarity(dim=3, eps=1e-6)
 		self.relu  = nn.ReLU()
 		self.bias  = bias#nn.Parameter(torch.tensor(bias))
 
 	def forward(self, xs, reference):
-		weight_map = self.relu(self.model(xs.unsqueeze(1), reference) - self.bias).mean(2).unsqueeze(1).mT.unsqueeze(3)
+		weight_map = self.relu(self.model(xs.unsqueeze(1), reference) * self.bias).mean(2).unsqueeze(1).mT.unsqueeze(3)
 		reference = reference.squeeze(1)
-		return (weight_map * reference).view(xs.shape[0], -1, len(reference[0][0]))
+		return torch.mul(weight_map, reference).view(xs.shape[0], -1, len(reference[0][0]))
 
 
 class FFN(nn.Module):
@@ -33,6 +35,7 @@ class FFN(nn.Module):
         super().__init__()
         self.linear1 = nn.Linear(d_model, d_ff)
         self.linear2 = nn.Linear(d_ff, d_model)
+        self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.linear2(F.relu(self.linear1(x)))
@@ -65,7 +68,7 @@ class SIAEncoder(nn.Module):
 		
 		# context informations
 		
-		x = torch.concat([reference_embedding, x], dim=1)
+		x = torch.concat([x, reference_embedding, x], dim=1)
 
 
 		hidden = torch.zeros(1, x.shape[0], self.hidden_size, device=self.device)
@@ -100,7 +103,7 @@ class SIADecoder(nn.Module):
 	def forward(self, x, y, hidden):
 		for decoder_layer in self.decoder_layers:
 			x, y, hidden = decoder_layer(x, y, hidden)
-		return y
+		return y, hidden
 
 class LightEncoder(nn.Module):
 	def __init__(self, d_model, hidden_size, d_ff=512, dropout=0.01, layer_norm_eps=1e-3):
@@ -112,10 +115,11 @@ class LightEncoder(nn.Module):
 		self.ffn = FFN(hidden_size, d_ff)
 
 	def forward(self, i, hidden):
-		i, hidden = self.model(i, hidden)
-		hidden = self.model_dropout(hidden)
-		hidden = self.layer_norm_model(hidden)
-		return i, self.ffn(hidden)
+		#i = self.attn(i)
+		i, hidden = self.model(i , hidden)
+		#hidden    = self.model_dropout(hidden)
+		#hidden    = self.layer_norm_model(hidden)
+		return i, hidden
 
 class LightDecoder(nn.Module):
 	def __init__(self, d_model, hidden_size, d_ff=512, dropout=0.1, layer_norm_eps=1e-3):
@@ -127,16 +131,11 @@ class LightDecoder(nn.Module):
 		self.layer_norm_model = nn.LayerNorm(d_model, eps=layer_norm_eps)
 		self.ffn = FFN(hidden_size, d_ff)
 
-	def forward(self, x, label, hidden):
+	def forward(self, x, y, state):
 		# x .. x, i ... y(label), hidden ... hidden layer at x
 
-		#x, _, _ = self.attention(label, x) #qk, v
-
-		x, hidden = self.model(x, hidden)
-		hidden = self.model_dropout(hidden)
-		hidden = self.layer_norm_model(hidden)
-
-		return x, label, self.ffn(hidden)
+		y, _ = self.model(y, state)
+		return x, y, state
 
 class SIA(nn.Module):
 	def __init__(self,
@@ -165,14 +164,7 @@ class SIA(nn.Module):
 		self.linear  = nn.Linear(d_model, vocab_size)
 
 	def forward(self, x, y, reference):
-		x_out, ys, hidden = self.encoder(x, y, reference)
-		x_out             = self.decoder(x_out, ys, hidden)
+		x_out, y, hidden  = self.encoder(x, y, reference)
+		x_out, hidden     = self.decoder(x_out, y, hidden)
 		x_out             = x_out[:, :len(y[0]), :]
-		return self.linear(x_out)
-
-	def predict(self, x, y, reference):
-		x_out, ys, hidden = self.encoder(x, y, reference)
-		for _ in range(len(y[0])):
-			ys = self.decoder(ys, ys, hidden)
-		x_out = x_out[:, :len(y[0]), :]
 		return self.linear(x_out)
