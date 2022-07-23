@@ -24,12 +24,18 @@ m = round(len(dataset) * 0.95)
 
 train_data, valid_data = dataset[:m], dataset[m:]
 
-model_name = "./models/model_colab_.pth"
+model_name = "./models/model_cpu_3_.pth"
 
-with open("./models/model_colab_dict.pickle", "wb") as f:
+with open("./models/model_cpu_3_.pickle", "wb") as f:
 	pickle.dump(parser.get_dict(), f)
 
-model = sia.SIA(len(parser.get_dict().keys()), 256, 0, parser.get_maxlen(), device=device)
+model = sia.SIA(len(parser.get_dict().keys()),
+	256,
+	0,
+	parser.get_maxlen(),
+	encoder_layer_num=3,
+	decoder_layer_num=3,
+	device=device)
 
 restart_from = False
 
@@ -83,14 +89,14 @@ def train_epoch():
 	for data_nth, article in enumerate(train_data):
 		bar.update(1)
 
-		if (data_nth + 1) % SAVE_MODEL_EVERY == 0:
+		if (data_nth + 0) % SAVE_MODEL_EVERY == 0:
 			torch.save(model.state_dict(), model_name)
 
-		if (data_nth + 1) % VALID_EVERY == 0:
+		if (data_nth + 0) % VALID_EVERY == 0:
 			valid_model()
 
 		model.train()
-		article_ = torch.tensor(article)
+		article_ = torch.tensor(article, device=device)
 
 		total_loss = 0.
 
@@ -103,8 +109,8 @@ def train_epoch():
 					loss = 0.
 					optimizer.zero_grad()
 
-					x = torch.tensor(article[i:i+mini_batch]).to(device_name)
-					y = torch.tensor(article[i+1:i+mini_batch+1]).to(device_name)
+					x = torch.tensor(article[i:i+mini_batch], device=device)
+					y = torch.tensor(article[i+1:i+mini_batch+1], device=device)
 
 					out = model(x, y, article_)
 
@@ -144,12 +150,12 @@ def valid_model():
 
 			for i in range(0, len(article)):
 				if i + 1 < len(article):
-					x = torch.tensor(article[i:i+1])
-					y = torch.tensor([article[i+1:i+2][0] + [0] * 63])
+					x = torch.tensor(article[i:i+1], device=device)
+					y = torch.tensor([[article[i+1:i+2][0][0]] + [0] * 63], device=device)
+					
+					article_masked = torch.tensor(article[:i+1], device=device)
 
-					article_masked = torch.tensor(article[:i+1])
-
-					out = model(x, y, article_masked)
+					out = model.predict(x, y, article_masked)
 					_, output_ids = torch.max(out, dim=-1)
 
 					m = max(sep_index(y[0]), sep_index(output_ids[0])) + 2

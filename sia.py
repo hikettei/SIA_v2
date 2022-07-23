@@ -169,3 +169,10 @@ class SIA(nn.Module):
 		x_out             = self.decoder(x_out, ys, hidden)
 		x_out             = x_out[:, :len(y[0]), :]
 		return self.linear(x_out)
+
+	def predict(self, x, y, reference):
+		x_out, ys, hidden = self.encoder(x, y, reference)
+		for _ in range(len(y[0])):
+			ys = self.decoder(ys, ys, hidden)
+		x_out = x_out[:, :len(y[0]), :]
+		return self.linear(x_out)
