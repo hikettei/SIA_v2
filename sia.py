@@ -4,37 +4,16 @@ import torch.nn.functional as F
 from reformer_pytorch import LSHAttention
 import math
 
-# 隣接する単語だけでAtteentionを計算+Sort
-# weightを後で可視化してみる.
-
-class PositionalEncoding(nn.Module):
-    def __init__(self, embedding_size: int, dropout: float, maxlen: int = 5000):
-        super(PositionalEncoding, self).__init__()
-        
-        den = torch.exp(-torch.arange(0, embedding_size, 2) * math.log(10000) / embedding_size)
-        pos = torch.arange(0, maxlen).reshape(maxlen, 1)
-        embedding_pos = torch.zeros((maxlen, embedding_size))
-        embedding_pos[:, 0::2] = torch.sin(pos * den)
-        embedding_pos[:, 1::2] = torch.cos(pos * den)
-        embedding_pos = embedding_pos.unsqueeze(-2)
-
-        self.dropout = nn.Dropout(dropout)
-        self.register_buffer('embedding_pos', embedding_pos)
-
-    def forward(self, token_embedding):
-    	return self.dropout(token_embedding)
-        #return self.dropout(torch.concat([token_embedding, self.embedding_pos[: token_embedding.size(0), :].squeeze(1)], dim=1))
-
 
 class SentenceEmbedding(nn.Module):
 	def __init__(self, vocab_size, d_model, pad_idx, dropout, maxlen):
 		super().__init__()
-		self.pe = PositionalEncoding(d_model, dropout, maxlen)
+		self.dropout = nn.Dropout(dropout)
 		self.embedding = nn.Embedding(vocab_size, d_model, pad_idx)
 
 	def forward(self, x):
 		# x ... [[1,2,3], [4,5,6] ...]
-		return self.pe(self.embedding(x))
+		return self.dropout(self.embedding(x))
 
 
 class IndexAttentionSort(nn.Module):
@@ -90,7 +69,7 @@ class SIAEncoder(nn.Module):
 		x = torch.concat([reference_embedding, x], dim=1)
 
 
-		hidden = torch.zeros(1, x.shape[0], self.hidden_size)
+		hidden = torch.zeros(1, x.shape[0], self.hidden_size, device=self.device)
 
 		for encoder_layer in self.encoder_layers:
 			x, hidden = encoder_layer(x, hidden)
@@ -144,22 +123,21 @@ class LightDecoder(nn.Module):
 		super().__init__()
 		self.hidden_size = hidden_size
 		self.model       = nn.GRU(d_model, hidden_size, batch_first=True)
-		self.attention   = LSHAttention(bucket_size=64, n_hashes=8)
 		
 		self.model_dropout = nn.Dropout(dropout)
 		self.layer_norm_model = nn.LayerNorm(d_model, eps=layer_norm_eps)
 		self.ffn = FFN(hidden_size, d_ff)
 
-	def forward(self, x, i, hidden):
+	def forward(self, x, label, hidden):
 		# x .. x, i ... y(label), hidden ... hidden layer at x
 
-		x, _, _ = self.attention(i, x) #qk, v
+		#x, _, _ = self.attention(label, x) #qk, v
 
 		x, hidden = self.model(x, hidden)
 		hidden = self.model_dropout(hidden)
 		hidden = self.layer_norm_model(hidden)
 
-		return x, i, self.ffn(hidden)
+		return x, label, self.ffn(hidden)
 
 class SIA(nn.Module):
 	def __init__(self,
@@ -182,10 +160,12 @@ class SIA(nn.Module):
 			device=device,
 			n_heads=n_heads,
 			hidden_size=d_model,
-			encoder_layer_num=encoder_layer_num)
+			encoder_layer_num=encoder_layer_num,
+			device=device)
 
 		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, hidden_size=d_model, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads)
 		self.linear  = nn.Linear(d_model, vocab_size)
+
 	def forward(self, x, y, reference):
 		x_out, ys, hidden = self.encoder(x, y, reference)
 		x_out             = self.decoder(x_out, ys, hidden)

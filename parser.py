@@ -9,6 +9,7 @@ user_names = []
 max_len = 0
 
 def get_maxlen():
+	print(max_len)
 	return max(256, max_len)
 
 def get_dict():
