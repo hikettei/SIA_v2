@@ -110,7 +110,7 @@ def parse(file_path="./dialogs/corpus_1.txt", interval_min=1, N=0):
 		dialogs  = [latest]
 
 		total = len(contents) + 1
-		bar = tqdm(total = total)
+		bar = tqdm(total = total, leave=False)
 
 		while latest:
 			latest = collect_next_dialog(contents, interval_min)

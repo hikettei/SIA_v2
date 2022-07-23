@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from reformer_pytorch import LSHAttention
 import math
 
 
@@ -160,8 +159,7 @@ class SIA(nn.Module):
 			device=device,
 			n_heads=n_heads,
 			hidden_size=d_model,
-			encoder_layer_num=encoder_layer_num,
-			device=device)
+			encoder_layer_num=encoder_layer_num)
 
 		self.decoder = SIADecoder(d_model, dropout, d_ff=d_ff, hidden_size=d_model, layer_norm_eps=layer_norm_eps, decoder_layer_num=decoder_layer_num, n_heads=n_heads)
 		self.linear  = nn.Linear(d_model, vocab_size)
