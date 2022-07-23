@@ -6,10 +6,12 @@ janome_tokenizer = Tokenizer()
 
 words_dict = {"<PAD>":0, "<SEP>":1}
 user_names = []
-max_len = 0
+max_len = 32
+ABSOLUTE_MAX_LEN = 128
 
 def get_maxlen():
 	print(max_len)
+	return ABSOLUTE_MAX_LEN
 	return max(256, max_len)
 
 def get_dict():
@@ -130,6 +132,8 @@ def padding(parsed_data, maxlen):
 	for dialogs in parsed_data:
 		tmp = []
 		for utterance in dialogs:
-			tmp.append(utterance + [words_dict["<PAD>"]] * (maxlen - len(utterance)))
+			if len(utterance) >= ABSOLUTE_MAX_LEN-5:
+				utterance = utterance[:ABSOLUTE_MAX_LEN-5]
+			tmp.append(utterance + [words_dict["<PAD>"]] * (ABSOLUTE_MAX_LEN - len(utterance)))
 		train_data.append(tmp)
 	return train_data
