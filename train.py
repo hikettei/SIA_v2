@@ -10,23 +10,10 @@ import torch.nn as nn
 import random
 import pickle
 
-class LabelSmoothingCrossEntropy(nn.Module):
-    def __init__(self, epsilon=0.1, reduction='mean'):
-        super().__init__()
-        self.epsilon = epsilon
-        self.reduction = reduction
-
-    def forward(self, preds, target):
-        n = preds.size()[-1]
-        log_preds = F.log_softmax(preds, dim=-1)
-        loss = reduce_loss(-log_preds.sum(dim=-1), self.reduction)
-        nll = F.nll_loss(log_preds, target, reduction=self.reduction)
-        return linear_combination(nll, loss/n, self.epsilon)
-
 device_name = "cpu"
 device = torch.device(device_name)
 
-dataset = parser.parse(file_path="./dialogs/test_corpus.txt", N=10000)
+dataset = parser.parse(file_path="./dialogs/corpus_1.txt", N=5000)
 dataset = parser.padding(dataset, parser.get_maxlen())
 
 min_utterance = 5
@@ -43,12 +30,13 @@ with open("./models/model_cpu_3_.pickle", "wb") as f:
 	pickle.dump(parser.get_dict(), f)
 
 model = sia.SIA(len(parser.get_dict().keys()),
-	512,
+	256,
 	0,
 	parser.get_maxlen(),
 	dropout=0.1,
-	encoder_layer_num=1,
-	decoder_layer_num=1,
+	d_ff=128,
+	encoder_layer_num=0,
+	decoder_layer_num=0,
 	device=device)
 
 restart_from = False
@@ -133,10 +121,15 @@ def train_epoch():
 					x = torch.tensor(article[i:i+mini_batch], device=device)
 					y = torch.tensor(article[i+1:i+mini_batch+1], device=device)
 					
-					y_ = torch.tensor([[SOS_Tokens[0]] + [0] * 63] * mini_batch, device=device)
+					article_masked = []
 
-					article_masked = torch.tensor(article[:i+mini_batch], device=device)
-					out = model(x, y_, article_masked)
+					for a in range(mini_batch):
+						article_masked.append(article_.view(-1).tolist())
+						#article_masked.append(article_[:1+i+a].view(-1).tolist())
+
+					article_masked = torch.tensor(article_masked, device=device)
+
+					out = model(x, y, article_masked)
 
 					_, output_ids = torch.max(out, dim=-1)
 
@@ -181,7 +174,13 @@ def valid_model():
 					y = torch.tensor(article[i+1:i+2], device=device)
 					y_ = torch.tensor([[article[i+1:i+2][0][0]] + [0] * 63], device=device)
 
-					article_masked = torch.tensor(article[:i+1], device=device)
+					article_masked = []
+
+					for a in range(1):
+						article_masked.append(article_.view(-1).tolist())
+						#article_masked.append(article_[:1+i+a].view(-1).tolist())
+
+					article_masked = torch.tensor(article_masked, device=device)
 
 					out = model(x, y_, article_masked)
 					_, output_ids = torch.max(out, dim=-1)
@@ -198,5 +197,5 @@ def valid_model():
 					print("")
 
 
-for i in range(5):
+for i in range(60):
 	train_epoch()
